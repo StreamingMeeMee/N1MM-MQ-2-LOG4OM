@@ -21,6 +21,7 @@ typedef struct {
     char password[128];
     char database[128];
     char table[128];
+    int verify_cert;
     db_column_t columns[DB_MAX_COLUMNS];
     size_t column_count;
 } db_client_t;

@@ -33,6 +33,7 @@ void db_client_init(db_client_t *db, const mysql_config_t *cfg) {
     snprintf(db->password, sizeof(db->password), "%s", cfg->password);
     snprintf(db->database, sizeof(db->database), "%s", cfg->database);
     snprintf(db->table, sizeof(db->table), "%s", cfg->table);
+    db->verify_cert = cfg->verify_cert;
 }
 
 int db_client_connect(db_client_t *db, char *errbuf, size_t errbuf_len) {
@@ -41,6 +42,13 @@ int db_client_connect(db_client_t *db, char *errbuf, size_t errbuf_len) {
         snprintf(errbuf, errbuf_len, "mysql_init failed");
         return -1;
     }
+
+    /* Controls whether the server's TLS certificate chain is validated
+     * (the connection itself is still encrypted either way if the server
+     * offers TLS). Off by request, for servers with a self-signed or
+     * otherwise untrusted cert on a private network. */
+    my_bool verify = (my_bool)(db->verify_cert ? 1 : 0);
+    mysql_options(db->conn, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &verify);
 
     if (!mysql_real_connect(db->conn, db->host, db->username, db->password, db->database,
                              (unsigned int)db->port, NULL, 0)) {

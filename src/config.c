@@ -131,6 +131,17 @@ int config_load(const char *path, app_config_t *out_cfg, char *errbuf, size_t er
     snprintf(out_cfg->mysql.table, sizeof(out_cfg->mysql.table), "%s", sql_table);
     out_cfg->mysql.port = (int)sql_port;
 
+    const json_value_t *verify_cert_v = json_object_get(sql, "verify_cert");
+    out_cfg->mysql.verify_cert = 1; /* default: verify (secure) */
+    if (verify_cert_v) {
+        if (verify_cert_v->type != JSON_BOOL) {
+            snprintf(errbuf, errbuf_size, "'mysql.verify_cert' must be a boolean (true/false)");
+            json_free(root);
+            return -1;
+        }
+        out_cfg->mysql.verify_cert = verify_cert_v->u.boolean;
+    }
+
     /* ---- field_map (optional) ---- */
     const json_value_t *fmap = json_object_get(root, "field_map");
     out_cfg->field_map_count = 0;

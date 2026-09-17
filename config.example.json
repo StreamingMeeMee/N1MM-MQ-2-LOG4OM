@@ -13,7 +13,8 @@
     "username": "log4om",
     "password": "secret",
     "database": "log4om2",
-    "table": "log"
+    "table": "log",
+    "verify_cert": true
   },
   "process_limit": 0,
   "field_map": {

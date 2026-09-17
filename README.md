@@ -104,7 +104,8 @@ Copy [`config.example.json`](config.example.json) to `config.json` and edit it:
     "username": "log4om",
     "password": "secret",
     "database": "log4om2",
-    "table": "log"
+    "table": "log",
+    "verify_cert": true
   },
   "process_limit": 0,
   "field_map": {
@@ -126,7 +127,12 @@ field-by-field mapping of every `contactinfo` element.)
   `vhost` [default `/`]) and `queue` (the queue to consume `contactinfo` messages from
   -- this should match one of N1MM-2-MQ's `message_queue_map` targets).
 - `mysql`: database connection (`host`, `port` [default 3306], `username`, `password`,
-  `database`, `table`).
+  `database`, `table`) plus `verify_cert` (optional, default `true`): whether the
+  server's TLS certificate chain is validated. The connection is still encrypted either
+  way if the server offers TLS -- this only controls whether an untrusted/self-signed
+  certificate causes the connection to be rejected. Set to `false` for a private-network
+  MySQL/MariaDB server with a self-signed certificate (you'll otherwise see a
+  `CERT_E_UNTRUSTEDROOT`/certificate-chain error on connect).
 - `process_limit` (optional, default `0`): if present and non-zero, the app processes
   exactly that many RabbitMQ messages (every message it receives and acts on --
   upserted, ignored, dropped, or requeued -- counts) and then exits cleanly (closing its

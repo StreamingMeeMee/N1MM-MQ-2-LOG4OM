@@ -21,6 +21,7 @@ typedef struct {
     char password[128];
     char database[128];
     char table[128];
+    int verify_cert; /* default 1 (true): validate the server's TLS certificate chain */
 } mysql_config_t;
 
 typedef struct {
