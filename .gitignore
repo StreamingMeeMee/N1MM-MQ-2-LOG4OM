@@ -1,0 +1,23 @@
+# Build output
+/build/
+/build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.o
+*.obj
+*.exe
+*.out
+*.vcxproj*
+*.sln
+.vs/
+
+# Local config (keep only the example in the repo)
+config.json
+
+# Editor/OS cruft
+*.swp
+*~
+.DS_Store
+Thumbs.db

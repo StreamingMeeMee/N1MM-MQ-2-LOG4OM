@@ -1,0 +1,28 @@
+{
+  "rabbitmq": {
+    "host": "127.0.0.1",
+    "port": 5672,
+    "username": "guest",
+    "password": "guest",
+    "vhost": "/",
+    "queue": "n1mm.contactinfo"
+  },
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "username": "log4om",
+    "password": "secret",
+    "database": "log4om2",
+    "table": "log"
+  },
+  "field_map": {
+    "call": "callsign",
+    "mycall": "stationcallsign",
+    "timestamp": "qsodate",
+    "ID": "qsoid",
+    "zone": "cqzone",
+    "txfreq": "freq",
+    "rxfreq": "freqrx",
+    "IsRunQSO": "null"
+  }
+}
