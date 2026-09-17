@@ -106,6 +106,7 @@ Copy [`config.example.json`](config.example.json) to `config.json` and edit it:
     "database": "log4om2",
     "table": "log"
   },
+  "process_limit": 0,
   "field_map": {
     "call": "callsign",
     "mycall": "stationcallsign",
@@ -118,12 +119,20 @@ Copy [`config.example.json`](config.example.json) to `config.json` and edit it:
   }
 }
 ```
+(abbreviated -- see [`config.example.json`](config.example.json) for the complete,
+field-by-field mapping of every `contactinfo` element.)
 
 - `rabbitmq`: broker connection (`host`, `port` [default 5672], `username`, `password`,
   `vhost` [default `/`]) and `queue` (the queue to consume `contactinfo` messages from
   -- this should match one of N1MM-2-MQ's `message_queue_map` targets).
 - `mysql`: database connection (`host`, `port` [default 3306], `username`, `password`,
   `database`, `table`).
+- `process_limit` (optional, default `0`): if present and non-zero, the app processes
+  exactly that many RabbitMQ messages (every message it receives and acts on --
+  upserted, ignored, dropped, or requeued -- counts) and then exits cleanly (closing its
+  RabbitMQ/MySQL connections first) instead of running forever. `0` or omitting it
+  entirely means unlimited, the normal long-running mode. Mainly useful for testing or
+  for running the app as a bounded one-shot batch job (e.g. from cron/Task Scheduler).
 - `field_map`: optional overrides/drops on top of the same-name default mapping from
   N1MM XML field to MySQL column (see "How it works" above). The example above covers
   the known N1MM-name-vs-Log4OM-column mismatches

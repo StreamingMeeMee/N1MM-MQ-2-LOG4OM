@@ -15,6 +15,7 @@
     "database": "log4om2",
     "table": "log"
   },
+  "process_limit": 0,
   "field_map": {
     "app": "programid",
     "contestname": "contestid",

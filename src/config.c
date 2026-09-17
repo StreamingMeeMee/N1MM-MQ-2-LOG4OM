@@ -154,6 +154,15 @@ int config_load(const char *path, app_config_t *out_cfg, char *errbuf, size_t er
         }
     }
 
+    /* ---- process_limit (optional) ---- */
+    double process_limit = json_get_number(root, "process_limit", 0);
+    if (process_limit < 0) {
+        snprintf(errbuf, errbuf_size, "'process_limit' must not be negative");
+        json_free(root);
+        return -1;
+    }
+    out_cfg->process_limit = (long)process_limit;
+
     json_free(root);
     return 0;
 }

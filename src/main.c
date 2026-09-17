@@ -219,8 +219,14 @@ int main(int argc, char **argv) {
 
     unsigned rmq_backoff_ms = 1000, db_backoff_ms = 1000;
     time_t next_rmq_attempt = 0, next_db_attempt = 0;
+    long processed_count = 0;
 
-    fprintf(stderr, "N1MM-MQ-2-LOG4OM starting. Press Ctrl+C to stop.\n");
+    if (cfg.process_limit > 0) {
+        fprintf(stderr, "N1MM-MQ-2-LOG4OM starting. Will process %ld message(s) then exit. Press Ctrl+C to stop early.\n",
+                cfg.process_limit);
+    } else {
+        fprintf(stderr, "N1MM-MQ-2-LOG4OM starting. Press Ctrl+C to stop.\n");
+    }
 
     while (!g_shutdown) {
         if (!rmq.connected && time(NULL) >= next_rmq_attempt) {
@@ -264,6 +270,12 @@ int main(int argc, char **argv) {
 
         process_message(&rmq, &db, &cfg, &envelope, &next_db_attempt);
         amqp_destroy_envelope(&envelope);
+
+        processed_count++;
+        if (cfg.process_limit > 0 && processed_count >= cfg.process_limit) {
+            fprintf(stderr, "Reached process_limit (%ld message(s)); shutting down.\n", cfg.process_limit);
+            g_shutdown = 1;
+        }
     }
 
     fprintf(stderr, "Shutting down...\n");

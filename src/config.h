@@ -33,6 +33,7 @@ typedef struct {
     mysql_config_t mysql;
     field_map_entry_t field_map[MAX_FIELD_MAP_ENTRIES];
     size_t field_map_count;
+    long process_limit; /* 0 (default/absent) = unlimited */
 } app_config_t;
 
 /* Loads and validates the JSON config at `path`. Returns 0 on success,
