@@ -84,6 +84,19 @@ cmake --build build --config Release
 Or with MSYS2/MinGW-w64 (`-G Ninja` or `-G "MinGW Makefiles"` from an MSYS2 MinGW64
 shell), if you installed the packages above.
 
+**Running the MinGW build from a plain `cmd.exe`/PowerShell window** (i.e. one that
+doesn't have the MSYS2/MinGW64 `bin` directory on `PATH`): MariaDB Connector/C pulls in
+its own copy of libcurl and its TLS/HTTP2 stack, adding well over a dozen DLL
+dependencies beyond the obvious `libmariadb.dll`. If those aren't found, Windows kills
+the process before `main()` even runs -- so it looks like the app "silently exits",
+because none of its own error messages ever get a chance to print. CMake (3.21+) handles
+this automatically: after each `cmake --build`, every required DLL is copied next to
+`n1mm-mq-2-log4om.exe`, so the `build` folder runs standalone. If you're on an older
+CMake, you'll get a build warning and need to either upgrade CMake, always run from a
+shell with MinGW64's `bin` on `PATH`, or copy the DLLs manually (run
+`objdump -p build\n1mm-mq-2-log4om.exe` from an MSYS2 shell to see the direct
+dependency, `libmariadb.dll`; the rest are `libmariadb.dll`'s own dependencies).
+
 ## Configuration
 
 Copy [`config.example.json`](config.example.json) to `config.json` and edit it:

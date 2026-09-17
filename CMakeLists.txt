@@ -153,4 +153,31 @@ if(WIN32)
     target_link_libraries(n1mm-mq-2-log4om PRIVATE ws2_32 iphlpapi)
 endif()
 
+# ---------------------------------------------------------------------------
+# On MinGW, the MySQL client pulls in a long chain of shared DLLs (its own
+# TLS/HTTP stack). Copy every non-system one next to the built exe after
+# each build, so the result runs standalone from a plain cmd.exe/PowerShell
+# window with no toolchain directories on PATH -- this is what caused the
+# app to appear to "silently exit" (the OS loader kills it before main()
+# runs, before any of our own error messages can print).
+# ---------------------------------------------------------------------------
+if(WIN32 AND MINGW AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")
+    get_filename_component(N1MM_TOOLCHAIN_BIN_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
+    add_custom_command(TARGET n1mm-mq-2-log4om POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+                -DTARGET_FILE=$<TARGET_FILE:n1mm-mq-2-log4om>
+                -DOUTPUT_DIR=$<TARGET_FILE_DIR:n1mm-mq-2-log4om>
+                -DTOOLCHAIN_BIN_DIR=${N1MM_TOOLCHAIN_BIN_DIR}
+                -P ${CMAKE_SOURCE_DIR}/cmake/copy_runtime_dlls.cmake
+        COMMENT "Copying runtime DLL dependencies next to n1mm-mq-2-log4om.exe"
+        VERBATIM
+    )
+elseif(WIN32 AND MINGW)
+    message(WARNING
+        "CMake ${CMAKE_VERSION} is older than 3.21: cannot auto-copy runtime DLLs "
+        "next to the built exe. Either upgrade CMake, or run from a shell that has "
+        "the MinGW/MSYS2 bin directory on PATH, or manually copy the DLLs listed in "
+        "README.md's Windows section next to the exe.")
+endif()
+
 install(TARGETS n1mm-mq-2-log4om RUNTIME DESTINATION bin)
