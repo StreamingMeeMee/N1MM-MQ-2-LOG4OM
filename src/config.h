@@ -12,7 +12,7 @@ typedef struct {
     char password[128];
     char vhost[128];
     char contactinfo_queue[128];
-    char contactinfo_reject_queue[128]; /* optional; empty = discard malformed messages */
+    char contactinfo_queue_reject[128]; /* optional; empty = discard rejected messages */
 } rabbitmq_config_t;
 
 typedef struct {

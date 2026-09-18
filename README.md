@@ -55,7 +55,7 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
   mappable fields** (nothing in it maps to a real column after `field_map`), or the
   insert fails with a **query error** (bad value, constraint violation; not a
   connection problem). Rejects are handled according to
-  `rabbitmq.contactinfo.reject.queue`: if set, the original body is published unchanged
+  `rabbitmq.contactinfo_queue_reject`: if set, the original body is published unchanged
   (with its original properties, persistent) to that queue and the message is
   acknowledged, so nothing is lost and it can be inspected or replayed later. If
   publishing to the reject queue fails, the message is requeued instead. If the option
@@ -133,7 +133,7 @@ Copy [`config.example.json`](config.example.json) to `config.json` and edit it:
     "password": "guest",
     "vhost": "/",
     "contactinfo_queue": "n1mm.contactinfo",
-    "contactinfo.reject.queue": "n1mm.contactinfo.reject"
+    "contactinfo_queue_reject": "n1mm.contactinfo.reject"
   },
   "mysql": {
     "host": "127.0.0.1",
@@ -163,7 +163,7 @@ field-by-field mapping of every `contactinfo` element.)
 - `rabbitmq`: broker connection (`host`, `port` [default 5672], `username`, `password`,
   `vhost` [default `/`]) and `contactinfo_queue` (the queue to consume `contactinfo` messages from
   -- this should match one of N1MM-2-MQ's `message_queue_map` targets). Optional
-  `contactinfo.reject.queue`: a queue name (the key really is spelled with dots) that
+  `contactinfo_queue_reject`: a queue name that
   rejected messages (malformed, no mappable fields, or query errors) are moved to instead
   of being discarded; it's declared (durable) at
   startup and must differ from `contactinfo_queue`.

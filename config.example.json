@@ -6,7 +6,7 @@
     "password": "guest",
     "vhost": "/",
     "contactinfo_queue": "n1mm.contactinfo",
-    "contactinfo.reject.queue": "n1mm.contactinfo.reject"
+    "contactinfo_queue_reject": "n1mm.contactinfo.reject"
   },
   "mysql": {
     "host": "127.0.0.1",

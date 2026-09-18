@@ -256,8 +256,8 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "N1MM-MQ-2-LOG4OM starting. Press Ctrl+C to stop.\n");
     }
-    if (!cfg.rabbitmq.contactinfo_reject_queue[0]) {
-        fprintf(stderr, "note: no 'contactinfo.reject.queue' configured, so messages that can't be stored "
+    if (!cfg.rabbitmq.contactinfo_queue_reject[0]) {
+        fprintf(stderr, "note: no 'contactinfo_queue_reject' configured, so messages that can't be stored "
                         "(malformed, no mappable fields, query errors) will be discarded.\n");
     }
 
