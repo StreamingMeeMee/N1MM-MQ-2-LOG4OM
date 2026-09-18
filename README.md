@@ -41,6 +41,14 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
 - **Fixed unit conversion**: N1MM sends `txfreq`/`rxfreq` in tens-of-Hz. Whichever
   column they end up mapped to (by default `freq`/`freqrx`) gets the value converted to
   kHz (divided by 100) -- this one conversion is built in, not configurable.
+- **Band conversion**: N1MM's `band` field is a number in MHz (`3.5`, `14`, `144`); it is
+  converted to the amateur band name Log4OM expects (`80m`, `20m`, `2m`), whichever
+  column it is mapped to. Bands shorter than a metre use ADIF/Log4OM's names (`70cm`,
+  `33cm`, `23cm`, `13cm`, `3cm`, `6mm`, ...) rather than a fractional metre. The number
+  only has to fall inside a band's range, so a nominal band label and an actual
+  frequency (`14.074`) both work. A value that isn't a plain number, or isn't in any
+  amateur band (e.g. it's already `80m`), is stored exactly as sent, since `band` is a
+  required column.
 - **Automatic truncation**: at connect time the app reads the real table's columns
   (name + `character_maximum_length`) from `information_schema.columns`. Any string
   value longer than its target column's limit is truncated to fit rather than failing

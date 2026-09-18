@@ -1,3 +1,4 @@
+#include "band.h"
 #include "config.h"
 #include "db_client.h"
 #include "log.h"
@@ -147,6 +148,15 @@ static size_t build_upsert_fields(const app_config_t *cfg, const db_client_t *db
             owned_buf = (char *)malloc(64);
             snprintf(owned_buf, 64, "%.3f", tens_of_hz / 100.0);
             value = owned_buf;
+        }
+
+        /* N1MM's band is a number in MHz ("3.5"); Log4OM wants the band name
+         * ("80m"). Anything unrecognized is kept as sent rather than dropped,
+         * since the band column is required. Tied to the source field, like
+         * the frequency conversion above. */
+        if (strcmp(xml_name, "band") == 0) {
+            const char *band_name = band_from_mhz(xml_value);
+            if (band_name) value = band_name;
         }
 
         if (max_len >= 0 && (long)strlen(value) > max_len) {
