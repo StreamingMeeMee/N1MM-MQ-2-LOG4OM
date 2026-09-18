@@ -43,8 +43,11 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
   rather than retried forever. RabbitMQ connection loss is retried the same way.
 - In **verbose mode** (`-v`), every received message prints one line to stdout with a
   timestamp, the message type, and what happened to it (`upserted`, `ignored`,
-  `requeued (...)`, `discarded (...)`). Without `-v`, nothing is printed to stdout
-  (errors/status still go to stderr).
+  `requeued (...)`, `discarded (...)`). If a message can't be parsed as XML at all, it is
+  discarded and the verbose output also shows its raw payload on a second line (byte
+  count, then the content with non-printable bytes escaped as `\xNN`, capped at 8192
+  bytes) so you can see what the sender actually put on the queue. Without `-v`, nothing
+  is printed to stdout (errors/status still go to stderr).
 
 ## Building
 

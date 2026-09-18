@@ -25,3 +25,24 @@ void log_message(const char *msg_type, const char *status) {
     printf("[%s] type=%s status=%s\n", timebuf, msg_type, status);
     fflush(stdout);
 }
+
+#define LOG_PAYLOAD_MAX 8192
+
+void log_payload(const char *body, size_t len) {
+    if (!g_verbose) return;
+
+    size_t shown = len < LOG_PAYLOAD_MAX ? len : LOG_PAYLOAD_MAX;
+    printf("  payload (%zu bytes): ", len);
+    for (size_t i = 0; i < shown; i++) {
+        unsigned char c = (unsigned char)body[i];
+        if (c == '\n') fputs("\\n", stdout);
+        else if (c == '\r') fputs("\\r", stdout);
+        else if (c == '\t') fputs("\\t", stdout);
+        else if (c == '\\') fputs("\\\\", stdout);
+        else if (c >= 0x20 && c <= 0x7E) fputc(c, stdout);
+        else printf("\\x%02X", c);
+    }
+    if (shown < len) printf("... [%zu more bytes not shown]", len - shown);
+    fputc('\n', stdout);
+    fflush(stdout);
+}

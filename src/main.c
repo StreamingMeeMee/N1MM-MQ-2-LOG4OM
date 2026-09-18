@@ -75,6 +75,7 @@ static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_confi
     xmlflat_doc_t doc;
     if (xmlflat_parse(body, body_len, &doc) != 0) {
         log_message("unknown", "discarded (malformed XML)");
+        log_payload(body, body_len);
         mq_consumer_nack(rmq, tag, 0);
         xmlflat_free(&doc);
         return;
