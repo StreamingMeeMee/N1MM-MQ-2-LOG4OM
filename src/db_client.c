@@ -164,6 +164,81 @@ int db_client_has_column(const db_client_t *db, const char *name, long *out_max_
     return 0;
 }
 
+/* Minimal growable string, so the statement length is never guessed at. */
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+    int failed;
+} sqlbuf_t;
+
+static void sb_append(sqlbuf_t *sb, const char *s, size_t n) {
+    if (sb->failed) return;
+    if (sb->len + n + 1 > sb->cap) {
+        size_t new_cap = sb->cap ? sb->cap : 256;
+        while (new_cap < sb->len + n + 1) new_cap *= 2;
+        char *grown = (char *)realloc(sb->data, new_cap);
+        if (!grown) {
+            sb->failed = 1;
+            return;
+        }
+        sb->data = grown;
+        sb->cap = new_cap;
+    }
+    memcpy(sb->data + sb->len, s, n);
+    sb->len += n;
+    sb->data[sb->len] = '\0';
+}
+
+static void sb_puts(sqlbuf_t *sb, const char *s) {
+    sb_append(sb, s, strlen(s));
+}
+
+/* Appends `name` as a backtick-quoted identifier (embedded backticks doubled). */
+static void sb_ident(sqlbuf_t *sb, const char *name) {
+    sb_append(sb, "`", 1);
+    for (const char *p = name; *p; p++) {
+        if (*p == '`') sb_append(sb, "``", 2);
+        else sb_append(sb, p, 1);
+    }
+    sb_append(sb, "`", 1);
+}
+
+/* Builds "INSERT INTO `t` (`a`,`b`) VALUES (?,?) ON DUPLICATE KEY UPDATE
+ * `a`=VALUES(`a`),`b`=VALUES(`b`)". Returns a malloc'd NUL-terminated string
+ * (length in *out_len) or NULL on allocation failure. */
+static char *build_upsert_sql(const char *table, const db_field_t *fields, size_t field_count, size_t *out_len) {
+    sqlbuf_t sb = {0};
+
+    sb_puts(&sb, "INSERT INTO ");
+    sb_ident(&sb, table);
+    sb_puts(&sb, " (");
+    for (size_t i = 0; i < field_count; i++) {
+        if (i) sb_append(&sb, ",", 1);
+        sb_ident(&sb, fields[i].column);
+    }
+    sb_puts(&sb, ") VALUES (");
+    for (size_t i = 0; i < field_count; i++) {
+        if (i) sb_append(&sb, ",", 1);
+        sb_append(&sb, "?", 1);
+    }
+    sb_puts(&sb, ") ON DUPLICATE KEY UPDATE ");
+    for (size_t i = 0; i < field_count; i++) {
+        if (i) sb_append(&sb, ",", 1);
+        sb_ident(&sb, fields[i].column);
+        sb_puts(&sb, "=VALUES(");
+        sb_ident(&sb, fields[i].column);
+        sb_append(&sb, ")", 1);
+    }
+
+    if (sb.failed) {
+        free(sb.data);
+        return NULL;
+    }
+    *out_len = sb.len;
+    return sb.data;
+}
+
 int db_client_upsert(db_client_t *db, const db_field_t *fields, size_t field_count,
                       int *out_is_connection_error, char *errbuf, size_t errbuf_len) {
     *out_is_connection_error = 0;
@@ -172,22 +247,11 @@ int db_client_upsert(db_client_t *db, const db_field_t *fields, size_t field_cou
         return -1;
     }
 
-    size_t bufcap = 128;
-    for (size_t i = 0; i < field_count; i++) bufcap += strlen(fields[i].column) * 3 + 16;
-    char *sql = (char *)malloc(bufcap);
     size_t pos = 0;
-
-    pos += (size_t)snprintf(sql + pos, bufcap - pos, "INSERT INTO `%s` (", db->table);
-    for (size_t i = 0; i < field_count; i++) {
-        pos += (size_t)snprintf(sql + pos, bufcap - pos, "%s`%s`", i ? "," : "", fields[i].column);
-    }
-    pos += (size_t)snprintf(sql + pos, bufcap - pos, ") VALUES (");
-    for (size_t i = 0; i < field_count; i++) {
-        pos += (size_t)snprintf(sql + pos, bufcap - pos, "%s?", i ? "," : "");
-    }
-    pos += (size_t)snprintf(sql + pos, bufcap - pos, ") ON DUPLICATE KEY UPDATE ");
-    for (size_t i = 0; i < field_count; i++) {
-        pos += (size_t)snprintf(sql + pos, bufcap - pos, "%s`%s`=VALUES(`%s`)", i ? "," : "", fields[i].column, fields[i].column);
+    char *sql = build_upsert_sql(db->table, fields, field_count, &pos);
+    if (!sql) {
+        snprintf(errbuf, errbuf_len, "out of memory building SQL");
+        return -1;
     }
 
     MYSQL_STMT *stmt = mysql_stmt_init(db->conn);
