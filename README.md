@@ -32,6 +32,12 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
   - A field that (after mapping) doesn't match any actual column on the table is
     silently skipped -- you don't need to map every single N1MM field, only the ones
     you want stored.
+  - **Blank values** (N1MM sends many empty fields, e.g. `power`, `qth`) are handled by
+    column type: for a text column (`varchar`, ...) the empty string is stored as-is; for
+    a non-text column (decimal, int, datetime, JSON, ...), where MySQL's strict mode
+    rejects `''` (`Incorrect decimal value: ''`), the field is left out of the statement
+    entirely so the column's default applies. On a re-delivered message this means an
+    empty value never overwrites an existing non-text value.
 - **Fixed unit conversion**: N1MM sends `txfreq`/`rxfreq` in tens-of-Hz. Whichever
   column they end up mapped to (by default `freq`/`freqrx`) gets the value converted to
   kHz (divided by 100) -- this one conversion is built in, not configurable.

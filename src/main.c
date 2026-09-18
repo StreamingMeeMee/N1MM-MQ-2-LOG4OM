@@ -102,42 +102,40 @@ static void reject_message(mq_consumer_t *rmq, amqp_envelope_t *envelope, const 
     }
 }
 
-/* Parses, maps, and upserts (or acks/nacks as appropriate) one delivered
- * message. Always leaves envelope ack'd/nack'd and doc memory freed;
- * never leaves a message un-acknowledged. */
-static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_config_t *cfg,
-                             amqp_envelope_t *envelope, time_t *next_db_attempt) {
-    const char *body = (const char *)envelope->message.body.bytes;
-    size_t body_len = envelope->message.body.len;
-    uint64_t tag = envelope->delivery_tag;
-
-    xmlflat_doc_t doc;
-    if (payload_parse(body, body_len, &doc) != 0) {
-        reject_message(rmq, envelope, "malformed: not valid XML or JSON", 1);
-        xmlflat_free(&doc);
-        return;
+static int is_blank(const char *s) {
+    for (; *s; s++) {
+        if (*s != ' ' && *s != '\t' && *s != '\r' && *s != '\n') return 0;
     }
+    return 1;
+}
 
-    if (!db->connected) {
-        log_message(MSG_TYPE,"requeued (MySQL unavailable)");
-        mq_consumer_nack(rmq, tag, 1);
-        xmlflat_free(&doc);
-        return;
-    }
+/* Turns a parsed message into (column, value) pairs for the upsert: applies
+ * field_map, keeps only fields that land on a real column, drops blank values
+ * for non-text columns, converts txfreq/rxfreq, and truncates over-long text.
+ * `fields` and `owned` must each have room for MAX_UPSERT_FIELDS entries.
+ * Values that had to be built (converted/truncated) are malloc'd copies
+ * recorded in owned[]; the caller frees them, and `fields` also points into
+ * `doc` and `cfg`, which must outlive it. Returns the number of fields. */
+static size_t build_upsert_fields(const app_config_t *cfg, const db_client_t *db, const xmlflat_doc_t *doc,
+                                   db_field_t *fields, char **owned, size_t *owned_count) {
+    size_t field_count = 0;
+    *owned_count = 0;
 
-    db_field_t fields[MAX_UPSERT_FIELDS];
-    char *owned[MAX_UPSERT_FIELDS];
-    size_t field_count = 0, owned_count = 0;
-
-    for (size_t i = 0; i < doc.field_count; i++) {
-        const char *xml_name = doc.fields[i].name;
-        const char *xml_value = doc.fields[i].value;
+    for (size_t i = 0; i < doc->field_count; i++) {
+        const char *xml_name = doc->fields[i].name;
+        const char *xml_value = doc->fields[i].value;
 
         const char *column = config_resolve_field(cfg, xml_name);
         if (!column) continue; /* "null"-mapped: drop this field */
 
         long max_len = -1;
         if (!db_client_has_column(db, column, &max_len)) continue; /* no such column: skip */
+
+        /* max_len < 0 means a non-text column (number, date, JSON, ...). MySQL's
+         * strict mode rejects '' there ("Incorrect decimal value: ''"), and N1MM
+         * sends empty fields routinely, so leave the field out entirely and let
+         * the column's default apply. Text columns keep '' as a real value. */
+        if (max_len < 0 && is_blank(xml_value)) continue;
 
         const char *value = xml_value;
         char *owned_buf = NULL;
@@ -164,11 +162,42 @@ static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_confi
             fields[field_count].column = column;
             fields[field_count].value = value;
             field_count++;
-            if (owned_buf) owned[owned_count++] = owned_buf;
+            if (owned_buf) owned[(*owned_count)++] = owned_buf;
         } else {
             free(owned_buf);
         }
     }
+
+    return field_count;
+}
+
+/* Parses, maps, and upserts (or acks/nacks as appropriate) one delivered
+ * message. Always leaves envelope ack'd/nack'd and doc memory freed;
+ * never leaves a message un-acknowledged. */
+static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_config_t *cfg,
+                             amqp_envelope_t *envelope, time_t *next_db_attempt) {
+    const char *body = (const char *)envelope->message.body.bytes;
+    size_t body_len = envelope->message.body.len;
+    uint64_t tag = envelope->delivery_tag;
+
+    xmlflat_doc_t doc;
+    if (payload_parse(body, body_len, &doc) != 0) {
+        reject_message(rmq, envelope, "malformed: not valid XML or JSON", 1);
+        xmlflat_free(&doc);
+        return;
+    }
+
+    if (!db->connected) {
+        log_message(MSG_TYPE,"requeued (MySQL unavailable)");
+        mq_consumer_nack(rmq, tag, 1);
+        xmlflat_free(&doc);
+        return;
+    }
+
+    db_field_t fields[MAX_UPSERT_FIELDS];
+    char *owned[MAX_UPSERT_FIELDS];
+    size_t owned_count = 0;
+    size_t field_count = build_upsert_fields(cfg, db, &doc, fields, owned, &owned_count);
 
     if (field_count == 0) {
         reject_message(rmq, envelope, "no mappable fields", 0);
