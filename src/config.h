@@ -11,7 +11,7 @@ typedef struct {
     char username[128];
     char password[128];
     char vhost[128];
-    char queue[128];
+    char contactinfo_queue[128];
 } rabbitmq_config_t;
 
 typedef struct {

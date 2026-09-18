@@ -14,6 +14,10 @@
 
 #define MAX_UPSERT_FIELDS 256
 
+/* Everything on the configured queue is assumed to be N1MM contactinfo,
+ * regardless of the XML root element's name. */
+static const char MSG_TYPE[] = "contactinfo";
+
 static volatile int g_shutdown = 0;
 
 #ifdef _WIN32
@@ -74,22 +78,15 @@ static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_confi
 
     xmlflat_doc_t doc;
     if (xmlflat_parse(body, body_len, &doc) != 0) {
-        log_message("unknown", "discarded (malformed XML)");
+        log_message(MSG_TYPE, "discarded (malformed XML)");
         log_payload(body, body_len);
         mq_consumer_nack(rmq, tag, 0);
         xmlflat_free(&doc);
         return;
     }
 
-    if (strcmp(doc.root, "contactinfo") != 0) {
-        log_message(doc.root, "ignored");
-        mq_consumer_ack(rmq, tag);
-        xmlflat_free(&doc);
-        return;
-    }
-
     if (!db->connected) {
-        log_message(doc.root, "requeued (MySQL unavailable)");
+        log_message(MSG_TYPE,"requeued (MySQL unavailable)");
         mq_consumer_nack(rmq, tag, 1);
         xmlflat_free(&doc);
         return;
@@ -141,7 +138,7 @@ static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_confi
     }
 
     if (field_count == 0) {
-        log_message(doc.root, "discarded (no mappable fields)");
+        log_message(MSG_TYPE,"discarded (no mappable fields)");
         mq_consumer_nack(rmq, tag, 0);
         for (size_t i = 0; i < owned_count; i++) free(owned[i]);
         xmlflat_free(&doc);
@@ -151,17 +148,17 @@ static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_confi
     int is_conn_err = 0;
     char errbuf[256];
     if (db_client_upsert(db, fields, field_count, &is_conn_err, errbuf, sizeof(errbuf)) == 0) {
-        log_message(doc.root, "upserted");
+        log_message(MSG_TYPE,"upserted");
         mq_consumer_ack(rmq, tag);
     } else if (is_conn_err) {
         fprintf(stderr, "MySQL error: %s\n", errbuf);
-        log_message(doc.root, "requeued (MySQL error)");
+        log_message(MSG_TYPE,"requeued (MySQL error)");
         db_client_disconnect(db);
         *next_db_attempt = 0;
         mq_consumer_nack(rmq, tag, 1);
     } else {
         fprintf(stderr, "MySQL error: %s\n", errbuf);
-        log_message(doc.root, "discarded (query error)");
+        log_message(MSG_TYPE,"discarded (query error)");
         mq_consumer_nack(rmq, tag, 0);
     }
 

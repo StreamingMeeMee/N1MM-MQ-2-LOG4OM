@@ -8,7 +8,7 @@
 void log_init(int verbose);
 
 /* Prints one verbose-mode line: timestamp, N1MM message type, and a status
- * (e.g. the target table, "ignored", "dropped", "requeued"). No-op when
+ * (e.g. "upserted", "requeued (...)", "discarded (...)"). No-op when
  * not verbose. */
 void log_message(const char *msg_type, const char *status);
 

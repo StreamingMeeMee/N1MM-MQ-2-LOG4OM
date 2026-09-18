@@ -77,12 +77,12 @@ int config_load(const char *path, app_config_t *out_cfg, char *errbuf, size_t er
     const char *rmq_host = json_get_string(rmq, "host", NULL);
     const char *rmq_user = json_get_string(rmq, "username", NULL);
     const char *rmq_pass = json_get_string(rmq, "password", NULL);
-    const char *rmq_queue = json_get_string(rmq, "queue", NULL);
+    const char *rmq_queue = json_get_string(rmq, "contactinfo_queue", NULL);
     const char *rmq_vhost = json_get_string(rmq, "vhost", "/");
     double rmq_port = json_get_number(rmq, "port", 5672);
 
     if (!rmq_host || !rmq_user || !rmq_pass || !rmq_queue) {
-        snprintf(errbuf, errbuf_size, "'rabbitmq' requires 'host', 'username', 'password', and 'queue'");
+        snprintf(errbuf, errbuf_size, "'rabbitmq' requires 'host', 'username', 'password', and 'contactinfo_queue'");
         json_free(root);
         return -1;
     }
@@ -96,7 +96,7 @@ int config_load(const char *path, app_config_t *out_cfg, char *errbuf, size_t er
     snprintf(out_cfg->rabbitmq.username, sizeof(out_cfg->rabbitmq.username), "%s", rmq_user);
     snprintf(out_cfg->rabbitmq.password, sizeof(out_cfg->rabbitmq.password), "%s", rmq_pass);
     snprintf(out_cfg->rabbitmq.vhost, sizeof(out_cfg->rabbitmq.vhost), "%s", rmq_vhost);
-    snprintf(out_cfg->rabbitmq.queue, sizeof(out_cfg->rabbitmq.queue), "%s", rmq_queue);
+    snprintf(out_cfg->rabbitmq.contactinfo_queue, sizeof(out_cfg->rabbitmq.contactinfo_queue), "%s", rmq_queue);
     out_cfg->rabbitmq.port = (int)rmq_port;
 
     /* ---- mysql ---- */

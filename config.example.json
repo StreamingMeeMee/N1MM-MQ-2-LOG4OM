@@ -5,7 +5,7 @@
     "username": "guest",
     "password": "guest",
     "vhost": "/",
-    "queue": "n1mm.contactinfo"
+    "contactinfo_queue": "n1mm.contactinfo"
   },
   "mysql": {
     "host": "127.0.0.1",

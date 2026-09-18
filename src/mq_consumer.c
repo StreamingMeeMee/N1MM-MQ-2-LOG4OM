@@ -50,7 +50,7 @@ void mq_consumer_init(mq_consumer_t *c, const rabbitmq_config_t *cfg) {
     snprintf(c->username, sizeof(c->username), "%s", cfg->username);
     snprintf(c->password, sizeof(c->password), "%s", cfg->password);
     snprintf(c->vhost, sizeof(c->vhost), "%s", cfg->vhost);
-    snprintf(c->queue, sizeof(c->queue), "%s", cfg->queue);
+    snprintf(c->queue, sizeof(c->queue), "%s", cfg->contactinfo_queue);
     c->connected = 0;
 }
 

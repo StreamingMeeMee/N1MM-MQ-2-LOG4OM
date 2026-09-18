@@ -7,10 +7,13 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
 
 ## How it works
 
-- Connects to one RabbitMQ queue (config-defined) and consumes messages one at a time.
-- Each message's root XML element name is its N1MM message type. Only `contactinfo`
-  messages are processed; anything else is acknowledged (removed from the queue) and
-  ignored, since this app's only job is turning QSOs into database rows.
+- Connects to one RabbitMQ queue (`rabbitmq.contactinfo_queue` in the config) and
+  consumes messages one at a time.
+- **Every message on that queue is assumed to be an N1MM `contactinfo` message** -- the
+  XML root element's name is not checked. Point `contactinfo_queue` only at a queue that
+  carries contactinfo; a message of some other type would be processed as if it were
+  contactinfo (typically ending up discarded with "no mappable fields", or, if its
+  fields happen to match your mapping, written as a row).
 - Every child element of a `contactinfo` message (`call`, `mycall`, `band`, `mode`,
   `timestamp`, `ID`, ... -- see
   [N1MM's UDP broadcast docs](https://n1mmwp.hamdocs.com/appendices/external-udp-broadcasts/))
@@ -42,8 +45,8 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
   value, constraint violation), the message is nacked without requeue -- discarded
   rather than retried forever. RabbitMQ connection loss is retried the same way.
 - In **verbose mode** (`-v`), every received message prints one line to stdout with a
-  timestamp, the message type, and what happened to it (`upserted`, `ignored`,
-  `requeued (...)`, `discarded (...)`). If a message can't be parsed as XML at all, it is
+  timestamp, the message type (always `contactinfo`), and what happened to it
+  (`upserted`, `requeued (...)`, `discarded (...)`). If a message can't be parsed as XML at all, it is
   discarded and the verbose output also shows its raw payload on a second line (byte
   count, then the content with non-printable bytes escaped as `\xNN`, capped at 8192
   bytes) so you can see what the sender actually put on the queue. Without `-v`, nothing
@@ -112,7 +115,7 @@ Copy [`config.example.json`](config.example.json) to `config.json` and edit it:
     "username": "guest",
     "password": "guest",
     "vhost": "/",
-    "queue": "n1mm.contactinfo"
+    "contactinfo_queue": "n1mm.contactinfo"
   },
   "mysql": {
     "host": "127.0.0.1",
@@ -140,7 +143,7 @@ Copy [`config.example.json`](config.example.json) to `config.json` and edit it:
 field-by-field mapping of every `contactinfo` element.)
 
 - `rabbitmq`: broker connection (`host`, `port` [default 5672], `username`, `password`,
-  `vhost` [default `/`]) and `queue` (the queue to consume `contactinfo` messages from
+  `vhost` [default `/`]) and `contactinfo_queue` (the queue to consume `contactinfo` messages from
   -- this should match one of N1MM-2-MQ's `message_queue_map` targets).
 - `mysql`: database connection (`host`, `port` [default 3306], `username`, `password`,
   `database`, `table`) plus `verify_cert` (optional, default `true`): whether the
@@ -151,7 +154,7 @@ field-by-field mapping of every `contactinfo` element.)
   `CERT_E_UNTRUSTEDROOT`/certificate-chain error on connect).
 - `process_limit` (optional, default `0`): if present and non-zero, the app processes
   exactly that many RabbitMQ messages (every message it receives and acts on --
-  upserted, ignored, dropped, or requeued -- counts) and then exits cleanly (closing its
+  upserted, discarded, or requeued -- counts) and then exits cleanly (closing its
   RabbitMQ/MySQL connections first) instead of running forever. `0` or omitting it
   entirely means unlimited, the normal long-running mode. Mainly useful for testing or
   for running the app as a bounded one-shot batch job (e.g. from cron/Task Scheduler).
