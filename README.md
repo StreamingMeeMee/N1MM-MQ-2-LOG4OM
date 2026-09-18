@@ -10,11 +10,18 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
 - Connects to one RabbitMQ queue (`rabbitmq.contactinfo_queue` in the config) and
   consumes messages one at a time.
 - **Every message on that queue is assumed to be an N1MM `contactinfo` message** -- the
-  XML root element's name is not checked. Point `contactinfo_queue` only at a queue that
+  root element's name is not checked. Point `contactinfo_queue` only at a queue that
   carries contactinfo; a message of some other type would be processed as if it were
   contactinfo (typically ending up discarded with "no mappable fields", or, if its
   fields happen to match your mapping, written as a row).
-- Every child element of a `contactinfo` message (`call`, `mycall`, `band`, `mode`,
+- **Two message formats are accepted**, detected from the first non-blank character:
+  N1MM's own flat XML (`<contactinfo><call>W1AW</call>...`), or a flat JSON object with
+  the same field names (`{"call":"W1AW",...}`), as produced by some XML-to-JSON
+  forwarders. In JSON, string values are used as-is, numbers are written as plain
+  decimals, `true`/`false` become `1`/`0`, and `null` or an empty `{}`/`[]` becomes an
+  empty string (the same as an empty XML element). A non-empty nested object/array as a
+  field value isn't supported and makes the message malformed.
+- Every field of a `contactinfo` message (`call`, `mycall`, `band`, `mode`,
   `timestamp`, `ID`, ... -- see
   [N1MM's UDP broadcast docs](https://n1mmwp.hamdocs.com/appendices/external-udp-broadcasts/))
   is mapped to a target column in the configured MySQL table via `field_map`:
@@ -44,13 +51,20 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
   and the app retries the MySQL connection with backoff. On a query/data error (bad
   value, constraint violation), the message is nacked without requeue -- discarded
   rather than retried forever. RabbitMQ connection loss is retried the same way.
+- **Malformed messages** (bodies that are neither valid XML nor valid JSON) are handled
+  according to `rabbitmq.contactinfo.reject.queue`: if set, the original body is
+  published unchanged (with its original properties, persistent) to that queue and the
+  message is acknowledged, so nothing is lost and it can be inspected or replayed later.
+  If publishing to the reject queue fails, the message is requeued instead. If the
+  option isn't set, malformed messages are **discarded permanently** (the app prints a
+  note about this at startup).
 - In **verbose mode** (`-v`), every received message prints one line to stdout with a
   timestamp, the message type (always `contactinfo`), and what happened to it
-  (`upserted`, `requeued (...)`, `discarded (...)`). If a message can't be parsed as XML at all, it is
-  discarded and the verbose output also shows its raw payload on a second line (byte
-  count, then the content with non-printable bytes escaped as `\xNN`, capped at 8192
-  bytes) so you can see what the sender actually put on the queue. Without `-v`, nothing
-  is printed to stdout (errors/status still go to stderr).
+  (`upserted`, `requeued (...)`, `discarded (...)`, `malformed, moved to reject queue
+  '...'`). For a malformed message the verbose output also shows its raw payload on a
+  second line (byte count, then the content with non-printable bytes escaped as `\xNN`,
+  capped at 8192 bytes) so you can see what the sender actually put on the queue.
+  Without `-v`, nothing is printed to stdout (errors/status still go to stderr).
 
 ## Building
 
@@ -115,7 +129,8 @@ Copy [`config.example.json`](config.example.json) to `config.json` and edit it:
     "username": "guest",
     "password": "guest",
     "vhost": "/",
-    "contactinfo_queue": "n1mm.contactinfo"
+    "contactinfo_queue": "n1mm.contactinfo",
+    "contactinfo.reject.queue": "n1mm.contactinfo.reject"
   },
   "mysql": {
     "host": "127.0.0.1",
@@ -144,7 +159,10 @@ field-by-field mapping of every `contactinfo` element.)
 
 - `rabbitmq`: broker connection (`host`, `port` [default 5672], `username`, `password`,
   `vhost` [default `/`]) and `contactinfo_queue` (the queue to consume `contactinfo` messages from
-  -- this should match one of N1MM-2-MQ's `message_queue_map` targets).
+  -- this should match one of N1MM-2-MQ's `message_queue_map` targets). Optional
+  `contactinfo.reject.queue`: a queue name (the key really is spelled with dots) that
+  malformed messages are moved to instead of being discarded; it's declared (durable) at
+  startup and must differ from `contactinfo_queue`.
 - `mysql`: database connection (`host`, `port` [default 3306], `username`, `password`,
   `database`, `table`) plus `verify_cert` (optional, default `true`): whether the
   server's TLS certificate chain is validated. The connection is still encrypted either

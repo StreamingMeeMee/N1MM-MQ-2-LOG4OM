@@ -97,6 +97,19 @@ int config_load(const char *path, app_config_t *out_cfg, char *errbuf, size_t er
     snprintf(out_cfg->rabbitmq.password, sizeof(out_cfg->rabbitmq.password), "%s", rmq_pass);
     snprintf(out_cfg->rabbitmq.vhost, sizeof(out_cfg->rabbitmq.vhost), "%s", rmq_vhost);
     snprintf(out_cfg->rabbitmq.contactinfo_queue, sizeof(out_cfg->rabbitmq.contactinfo_queue), "%s", rmq_queue);
+
+    const char *rmq_reject_queue = json_get_string(rmq, "contactinfo.reject.queue", NULL);
+    if (rmq_reject_queue && rmq_reject_queue[0]) {
+        if (strcmp(rmq_reject_queue, rmq_queue) == 0) {
+            snprintf(errbuf, errbuf_size,
+                     "'rabbitmq.contactinfo.reject.queue' must differ from 'contactinfo_queue' "
+                     "(rejected messages would be re-consumed forever)");
+            json_free(root);
+            return -1;
+        }
+        snprintf(out_cfg->rabbitmq.contactinfo_reject_queue, sizeof(out_cfg->rabbitmq.contactinfo_reject_queue),
+                 "%s", rmq_reject_queue);
+    }
     out_cfg->rabbitmq.port = (int)rmq_port;
 
     /* ---- mysql ---- */

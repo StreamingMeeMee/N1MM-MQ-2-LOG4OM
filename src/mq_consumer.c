@@ -51,6 +51,7 @@ void mq_consumer_init(mq_consumer_t *c, const rabbitmq_config_t *cfg) {
     snprintf(c->password, sizeof(c->password), "%s", cfg->password);
     snprintf(c->vhost, sizeof(c->vhost), "%s", cfg->vhost);
     snprintf(c->queue, sizeof(c->queue), "%s", cfg->contactinfo_queue);
+    snprintf(c->reject_queue, sizeof(c->reject_queue), "%s", cfg->contactinfo_reject_queue);
     c->connected = 0;
 }
 
@@ -105,6 +106,19 @@ int mq_consumer_connect(mq_consumer_t *c, char *errbuf, size_t errbuf_len) {
         return -1;
     }
 
+    if (c->reject_queue[0]) {
+        amqp_queue_declare(c->conn, AMQP_APP_CHANNEL, amqp_cstring_bytes(c->reject_queue),
+                            0 /* passive */, 1 /* durable */, 0 /* exclusive */, 0 /* auto_delete */,
+                            amqp_empty_table);
+        reply = amqp_get_rpc_reply(c->conn);
+        if (check_amqp_reply(reply, "amqp_queue_declare (reject queue)", errbuf, errbuf_len) != 0) {
+            amqp_connection_close(c->conn, AMQP_REPLY_SUCCESS);
+            amqp_destroy_connection(c->conn);
+            c->conn = NULL;
+            return -1;
+        }
+    }
+
     amqp_basic_consume(c->conn, AMQP_APP_CHANNEL, amqp_cstring_bytes(c->queue),
                         amqp_empty_bytes /* consumer tag: server-assigned */,
                         0 /* no_local */, 0 /* no_ack: we ack manually */, 0 /* exclusive */,
@@ -149,6 +163,28 @@ int mq_consumer_receive(mq_consumer_t *c, amqp_envelope_t *out_envelope, int tim
     }
     check_amqp_reply(reply, "amqp_consume_message", errbuf, errbuf_len);
     return -1;
+}
+
+int mq_consumer_publish(mq_consumer_t *c, const char *queue, const void *body, size_t len,
+                         const amqp_basic_properties_t *props) {
+    amqp_basic_properties_t out_props;
+    if (props) {
+        out_props = *props;
+    } else {
+        memset(&out_props, 0, sizeof(out_props));
+    }
+    out_props._flags |= AMQP_BASIC_DELIVERY_MODE_FLAG;
+    out_props.delivery_mode = 2; /* persistent */
+
+    amqp_bytes_t payload;
+    payload.len = len;
+    payload.bytes = (void *)body;
+
+    int status = amqp_basic_publish(c->conn, AMQP_APP_CHANNEL,
+                                     amqp_cstring_bytes(""), /* default exchange: routes straight to the named queue */
+                                     amqp_cstring_bytes(queue),
+                                     0, 0, &out_props, payload);
+    return status == AMQP_STATUS_OK ? 0 : -1;
 }
 
 int mq_consumer_ack(mq_consumer_t *c, uint64_t delivery_tag) {

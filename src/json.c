@@ -10,7 +10,10 @@ typedef struct {
     char *errbuf;
     size_t errbuf_size;
     int error;
+    int depth;
 } parser_t;
+
+#define JSON_MAX_DEPTH 32
 
 static void set_error(parser_t *ps, const char *msg) {
     if (ps->error) return;
@@ -264,8 +267,17 @@ static json_value_t *parse_array(parser_t *ps) {
 static json_value_t *parse_value(parser_t *ps) {
     skip_ws(ps);
     char c = *ps->p;
-    if (c == '{') return parse_object(ps);
-    if (c == '[') return parse_array(ps);
+    if (c == '{' || c == '[') {
+        /* Bounded so a hostile/garbage payload of "[[[[..." can't overflow the stack. */
+        if (ps->depth >= JSON_MAX_DEPTH) {
+            set_error(ps, "nesting too deep");
+            return NULL;
+        }
+        ps->depth++;
+        json_value_t *nested = (c == '{') ? parse_object(ps) : parse_array(ps);
+        ps->depth--;
+        return nested;
+    }
     if (c == '"') {
         char *s = parse_string_raw(ps);
         if (!s) return NULL;
@@ -312,6 +324,7 @@ json_value_t *json_parse(const char *text, char *errbuf, size_t errbuf_size) {
     ps.errbuf = errbuf;
     ps.errbuf_size = errbuf_size;
     ps.error = 0;
+    ps.depth = 0;
 
     json_value_t *v = parse_value(&ps);
     if (!v) return NULL;

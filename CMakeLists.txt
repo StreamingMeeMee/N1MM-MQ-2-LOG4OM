@@ -13,6 +13,7 @@ add_executable(n1mm-mq-2-log4om
     src/config.c
     src/json.c
     src/xmlflat.c
+    src/payload.c
     src/mq_consumer.c
     src/db_client.c
     src/log.c

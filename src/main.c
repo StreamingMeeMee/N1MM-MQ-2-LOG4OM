@@ -2,6 +2,7 @@
 #include "db_client.h"
 #include "log.h"
 #include "mq_consumer.h"
+#include "payload.h"
 #include "xmlflat.h"
 
 #include <amqp.h>
@@ -77,10 +78,27 @@ static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_confi
     uint64_t tag = envelope->delivery_tag;
 
     xmlflat_doc_t doc;
-    if (xmlflat_parse(body, body_len, &doc) != 0) {
-        log_message(MSG_TYPE, "discarded (malformed XML)");
-        log_payload(body, body_len);
-        mq_consumer_nack(rmq, tag, 0);
+    if (payload_parse(body, body_len, &doc) != 0) {
+        if (rmq->reject_queue[0]) {
+            if (mq_consumer_publish(rmq, rmq->reject_queue, body, body_len, &envelope->message.properties) == 0) {
+                char status[192];
+                snprintf(status, sizeof(status), "malformed, moved to reject queue '%s'", rmq->reject_queue);
+                log_message(MSG_TYPE, status);
+                log_payload(body, body_len);
+                mq_consumer_ack(rmq, tag);
+            } else {
+                /* Couldn't hand it to the reject queue: put it back rather than lose it. */
+                fprintf(stderr, "failed to publish malformed message to reject queue '%s'; requeueing it\n",
+                        rmq->reject_queue);
+                log_message(MSG_TYPE, "malformed, requeued (reject queue publish failed)");
+                log_payload(body, body_len);
+                mq_consumer_nack(rmq, tag, 1);
+            }
+        } else {
+            log_message(MSG_TYPE, "discarded (malformed: not valid XML or JSON)");
+            log_payload(body, body_len);
+            mq_consumer_nack(rmq, tag, 0);
+        }
         xmlflat_free(&doc);
         return;
     }
@@ -224,6 +242,9 @@ int main(int argc, char **argv) {
                 cfg.process_limit);
     } else {
         fprintf(stderr, "N1MM-MQ-2-LOG4OM starting. Press Ctrl+C to stop.\n");
+    }
+    if (!cfg.rabbitmq.contactinfo_reject_queue[0]) {
+        fprintf(stderr, "note: no 'contactinfo.reject.queue' configured, so malformed messages will be discarded.\n");
     }
 
     while (!g_shutdown) {
