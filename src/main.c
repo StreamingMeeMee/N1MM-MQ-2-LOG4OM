@@ -68,6 +68,40 @@ static time_t backoff_next(unsigned *backoff_ms) {
     return next;
 }
 
+/* Disposes of a message that can't become a row. With a reject queue
+ * configured, the original body is republished there and the message is
+ * acked; if that publish fails the message is requeued instead of lost.
+ * Without one, the message is discarded. `reason` is a short description
+ * used in the verbose status and stderr note. */
+static void reject_message(mq_consumer_t *rmq, amqp_envelope_t *envelope, const char *reason, int show_payload) {
+    const char *body = (const char *)envelope->message.body.bytes;
+    size_t body_len = envelope->message.body.len;
+    uint64_t tag = envelope->delivery_tag;
+    char status[256];
+
+    if (!rmq->reject_queue[0]) {
+        snprintf(status, sizeof(status), "discarded (%s)", reason);
+        log_message(MSG_TYPE, status);
+        if (show_payload) log_payload(body, body_len);
+        mq_consumer_nack(rmq, tag, 0);
+        return;
+    }
+
+    if (mq_consumer_publish(rmq, rmq->reject_queue, body, body_len, &envelope->message.properties) == 0) {
+        snprintf(status, sizeof(status), "%s, moved to reject queue '%s'", reason, rmq->reject_queue);
+        log_message(MSG_TYPE, status);
+        if (show_payload) log_payload(body, body_len);
+        mq_consumer_ack(rmq, tag);
+    } else {
+        fprintf(stderr, "failed to publish rejected message (%s) to reject queue '%s'; requeueing it\n",
+                reason, rmq->reject_queue);
+        snprintf(status, sizeof(status), "%s, requeued (reject queue publish failed)", reason);
+        log_message(MSG_TYPE, status);
+        if (show_payload) log_payload(body, body_len);
+        mq_consumer_nack(rmq, tag, 1);
+    }
+}
+
 /* Parses, maps, and upserts (or acks/nacks as appropriate) one delivered
  * message. Always leaves envelope ack'd/nack'd and doc memory freed;
  * never leaves a message un-acknowledged. */
@@ -79,26 +113,7 @@ static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_confi
 
     xmlflat_doc_t doc;
     if (payload_parse(body, body_len, &doc) != 0) {
-        if (rmq->reject_queue[0]) {
-            if (mq_consumer_publish(rmq, rmq->reject_queue, body, body_len, &envelope->message.properties) == 0) {
-                char status[192];
-                snprintf(status, sizeof(status), "malformed, moved to reject queue '%s'", rmq->reject_queue);
-                log_message(MSG_TYPE, status);
-                log_payload(body, body_len);
-                mq_consumer_ack(rmq, tag);
-            } else {
-                /* Couldn't hand it to the reject queue: put it back rather than lose it. */
-                fprintf(stderr, "failed to publish malformed message to reject queue '%s'; requeueing it\n",
-                        rmq->reject_queue);
-                log_message(MSG_TYPE, "malformed, requeued (reject queue publish failed)");
-                log_payload(body, body_len);
-                mq_consumer_nack(rmq, tag, 1);
-            }
-        } else {
-            log_message(MSG_TYPE, "discarded (malformed: not valid XML or JSON)");
-            log_payload(body, body_len);
-            mq_consumer_nack(rmq, tag, 0);
-        }
+        reject_message(rmq, envelope, "malformed: not valid XML or JSON", 1);
         xmlflat_free(&doc);
         return;
     }
@@ -156,8 +171,7 @@ static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_confi
     }
 
     if (field_count == 0) {
-        log_message(MSG_TYPE,"discarded (no mappable fields)");
-        mq_consumer_nack(rmq, tag, 0);
+        reject_message(rmq, envelope, "no mappable fields", 0);
         for (size_t i = 0; i < owned_count; i++) free(owned[i]);
         xmlflat_free(&doc);
         return;
@@ -176,8 +190,7 @@ static void process_message(mq_consumer_t *rmq, db_client_t *db, const app_confi
         mq_consumer_nack(rmq, tag, 1);
     } else {
         fprintf(stderr, "MySQL error: %s\n", errbuf);
-        log_message(MSG_TYPE,"discarded (query error)");
-        mq_consumer_nack(rmq, tag, 0);
+        reject_message(rmq, envelope, "query error", 0);
     }
 
     for (size_t i = 0; i < owned_count; i++) free(owned[i]);
@@ -244,7 +257,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "N1MM-MQ-2-LOG4OM starting. Press Ctrl+C to stop.\n");
     }
     if (!cfg.rabbitmq.contactinfo_reject_queue[0]) {
-        fprintf(stderr, "note: no 'contactinfo.reject.queue' configured, so malformed messages will be discarded.\n");
+        fprintf(stderr, "note: no 'contactinfo.reject.queue' configured, so messages that can't be stored "
+                        "(malformed, no mappable fields, query errors) will be discarded.\n");
     }
 
     while (!g_shutdown) {

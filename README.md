@@ -48,19 +48,22 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
   ALTER TABLE log ADD UNIQUE KEY uq_log_qsoid (qsoid);
   ```
 - On a MySQL connection failure, the message is nacked with requeue so it isn't lost,
-  and the app retries the MySQL connection with backoff. On a query/data error (bad
-  value, constraint violation), the message is nacked without requeue -- discarded
-  rather than retried forever. RabbitMQ connection loss is retried the same way.
-- **Malformed messages** (bodies that are neither valid XML nor valid JSON) are handled
-  according to `rabbitmq.contactinfo.reject.queue`: if set, the original body is
-  published unchanged (with its original properties, persistent) to that queue and the
-  message is acknowledged, so nothing is lost and it can be inspected or replayed later.
-  If publishing to the reject queue fails, the message is requeued instead. If the
-  option isn't set, malformed messages are **discarded permanently** (the app prints a
-  note about this at startup).
+  and the app retries the MySQL connection with backoff. RabbitMQ connection loss is
+  retried the same way.
+- **Rejected messages**: a message that can't be turned into a row is *rejected*, in
+  three cases -- it's **malformed** (neither valid XML nor valid JSON), it has **no
+  mappable fields** (nothing in it maps to a real column after `field_map`), or the
+  insert fails with a **query error** (bad value, constraint violation; not a
+  connection problem). Rejects are handled according to
+  `rabbitmq.contactinfo.reject.queue`: if set, the original body is published unchanged
+  (with its original properties, persistent) to that queue and the message is
+  acknowledged, so nothing is lost and it can be inspected or replayed later. If
+  publishing to the reject queue fails, the message is requeued instead. If the option
+  isn't set, rejected messages are **discarded permanently** rather than retried
+  forever (the app prints a note about this at startup).
 - In **verbose mode** (`-v`), every received message prints one line to stdout with a
   timestamp, the message type (always `contactinfo`), and what happened to it
-  (`upserted`, `requeued (...)`, `discarded (...)`, `malformed, moved to reject queue
+  (`upserted`, `requeued (...)`, `discarded (...)`, or `<reason>, moved to reject queue
   '...'`). For a malformed message the verbose output also shows its raw payload on a
   second line (byte count, then the content with non-printable bytes escaped as `\xNN`,
   capped at 8192 bytes) so you can see what the sender actually put on the queue.
@@ -161,7 +164,8 @@ field-by-field mapping of every `contactinfo` element.)
   `vhost` [default `/`]) and `contactinfo_queue` (the queue to consume `contactinfo` messages from
   -- this should match one of N1MM-2-MQ's `message_queue_map` targets). Optional
   `contactinfo.reject.queue`: a queue name (the key really is spelled with dots) that
-  malformed messages are moved to instead of being discarded; it's declared (durable) at
+  rejected messages (malformed, no mappable fields, or query errors) are moved to instead
+  of being discarded; it's declared (durable) at
   startup and must differ from `contactinfo_queue`.
 - `mysql`: database connection (`host`, `port` [default 3306], `username`, `password`,
   `database`, `table`) plus `verify_cert` (optional, default `true`): whether the
