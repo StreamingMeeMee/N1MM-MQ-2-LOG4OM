@@ -4,11 +4,13 @@
 #include "log.h"
 #include "mq_consumer.h"
 #include "payload.h"
+#include "qsoid.h"
 #include "xmlflat.h"
 
 #include <amqp.h>
 #include <mysql.h>
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -103,6 +105,13 @@ static void reject_message(mq_consumer_t *rmq, amqp_envelope_t *envelope, const 
     }
 }
 
+static int str_ieq(const char *a, const char *b) {
+    for (; *a && *b; a++, b++) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return 0;
+    }
+    return *a == *b;
+}
+
 static int is_blank(const char *s) {
     for (; *s; s++) {
         if (*s != ' ' && *s != '\t' && *s != '\r' && *s != '\n') return 0;
@@ -128,6 +137,9 @@ static size_t build_upsert_fields(const app_config_t *cfg, const db_client_t *db
 
         const char *column = config_resolve_field(cfg, xml_name);
         if (!column) continue; /* "null"-mapped: drop this field */
+
+        /* qsoid is always generated below; a mapping onto it (e.g. N1MM's ID) is ignored. */
+        if (str_ieq(column, "qsoid")) continue;
 
         long max_len = -1;
         if (!db_client_has_column(db, column, &max_len)) continue; /* no such column: skip */
@@ -176,6 +188,20 @@ static size_t build_upsert_fields(const app_config_t *cfg, const db_client_t *db
         } else {
             free(owned_buf);
         }
+    }
+
+    /* qsoid is a calculated value (see qsoid.h), not taken from the message. Added
+     * only if something else mapped, so an unmappable message is still rejected
+     * instead of becoming a row that holds nothing but an id. */
+    long qsoid_max = -1;
+    if (field_count > 0 && field_count < MAX_UPSERT_FIELDS && db_client_has_column(db, "qsoid", &qsoid_max)) {
+        char *id = (char *)malloc(QSOID_LEN + 1);
+        qsoid_generate(id);
+        if (qsoid_max >= 0 && qsoid_max < QSOID_LEN) id[qsoid_max] = '\0';
+        fields[field_count].column = "qsoid";
+        fields[field_count].value = id;
+        field_count++;
+        owned[(*owned_count)++] = id;
     }
 
     return field_count;

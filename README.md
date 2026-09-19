@@ -52,15 +52,21 @@ Log4OM2 MySQL `log` table. Runs on both Linux and Windows.
 - **Automatic truncation**: at connect time the app reads the real table's columns
   (name + `character_maximum_length`) from `information_schema.columns`. Any string
   value longer than its target column's limit is truncated to fit rather than failing
-  the insert. This is what makes the default `ID` -> `qsoid` mapping work: N1MM's
-  32-character GUID is truncated to `qsoid`'s 18 characters.
-- Writes via `INSERT ... ON DUPLICATE KEY UPDATE`, so a redelivered message updates
-  the existing row instead of creating a duplicate. **This requires whatever column you
-  end up using as the dedup key (`qsoid` by default) to actually have a UNIQUE or
-  PRIMARY KEY on your table** -- add one if it doesn't, e.g.:
-  ```sql
-  ALTER TABLE log ADD UNIQUE KEY uq_log_qsoid (qsoid);
-  ```
+  the insert.
+- **`qsoid` is calculated, not taken from the message.** It is built from the time the
+  message is processed (local time): a 4-digit year, then 2-digit month, day, 24-hour
+  hour, minute and second, then a 3-digit random number with leading zeros -- e.g.
+  `20260918231937042`, 17 characters, which fits a `varchar(18)` column. Within one
+  running app, two messages handled in the same second never get the same random part.
+  Any `field_map` entry that maps a field onto `qsoid` (such as N1MM's `ID`) is ignored,
+  and a table with no `qsoid` column gets none. A message with nothing else mappable is
+  still rejected rather than stored as an id-only row.
+- Writes via `INSERT ... ON DUPLICATE KEY UPDATE`. **Because `qsoid` is generated fresh
+  for each message, a message that RabbitMQ delivers twice (for example after a dropped
+  acknowledgement) is stored twice, as two rows with different `qsoid`s**; the
+  `ON DUPLICATE KEY` clause only comes into play if two generated ids ever collide (in
+  which case the later message would overwrite the earlier row). It does require `qsoid`
+  to be a UNIQUE or PRIMARY KEY, which is normal for Log4OM's `log` table.
 - On a MySQL connection failure, the message is nacked with requeue so it isn't lost,
   and the app retries the MySQL connection with backoff. RabbitMQ connection loss is
   retried the same way.
@@ -163,7 +169,7 @@ Copy [`config.example.json`](config.example.json) to `config.json` and edit it:
     "call": "callsign",
     "mycall": "stationcallsign",
     "timestamp": "qsodate",
-    "ID": "qsoid",
+    "ID": "null",
     "zone": "cqzone",
     "txfreq": "freq",
     "rxfreq": "freqrx",
@@ -198,9 +204,9 @@ field-by-field mapping of every `contactinfo` element.)
   N1MM XML field to MySQL column (see "How it works" above). The example above covers
   the known N1MM-name-vs-Log4OM-column mismatches
   (`call`->`callsign`, `mycall`->`stationcallsign`, `timestamp`->`qsodate`,
-  `ID`->`qsoid`, `zone`->`cqzone`, `txfreq`->`freq`, `rxfreq`->`freqrx` -- the last two
-  are also where the kHz unit conversion actually takes effect) plus one example of
-  dropping a field. Extend it with
+  `zone`->`cqzone`, `txfreq`->`freq`, `rxfreq`->`freqrx` -- the last two
+  are also where the kHz unit conversion actually takes effect) plus examples of
+  dropping a field (including `ID`, since `qsoid` is generated). Extend it with
   whatever other N1MM fields you want captured under a different column name, or
   dropped entirely.
 
